@@ -125,11 +125,7 @@
   <script>
     // Albums index page initialization - Compatible with SPA
     function initializeAlbumsIndexPage() {
-      console.log('Initializing Albums index page...');
-      
       initAlbumsTableSorting();
-      
-      console.log('Albums index page initialization completed');
     }
     
     function initAlbumsTableSorting() {
@@ -137,7 +133,6 @@
       const table = document.getElementById('albums-table');
 
       if (!tbody || !table) {
-        console.warn('Albums table elements not found');
         return;
       }
 
@@ -146,7 +141,6 @@
       if (mode === 'manual') {
         // Wait for Sortable to be available (in case of race condition)
         if (typeof Sortable === 'undefined') {
-          console.log('Sortable not loaded yet, waiting...');
           setTimeout(initAlbumsTableSorting, 50);
           return;
         }
@@ -155,9 +149,7 @@
         if (tbody._sortableInstance) {
           try {
             tbody._sortableInstance.destroy();
-          } catch(e) {
-            console.warn('Failed to destroy existing Sortable instance:', e);
-          }
+          } catch(e) {}
         }
 
         // Create new Sortable instance
@@ -188,12 +180,9 @@
             });
             if (window.showToast) window.showToast('Album order saved', 'success');
           } catch(error) {
-            console.error('Failed to save albums order:', error);
             if (window.showToast) window.showToast('Error saving order', 'error');
           }
         }
-
-        console.log('Albums table sorting initialized');
       }
     }
     
