@@ -7,9 +7,12 @@ use App\Support\Database;
 
 class Installer
 {
-    private Database $db;
+    private ?Database $db = null;
     private array $config = [];
     private string $rootPath;
+    private bool $envWritten = false;
+    private bool $dbCreated = false;
+    private ?string $createdDbPath = null;
 
     public function __construct(string $rootPath)
     {
@@ -97,8 +100,13 @@ class Installer
 
     public function install(array $data): bool
     {
+        // Reset state tracking
+        $this->envWritten = false;
+        $this->dbCreated = false;
+        $this->createdDbPath = null;
+
         try {
-            $this->verifyRequirements();
+            $this->verifyRequirements($data);
             $this->setupDatabase($data);
             $this->installSchema();
             $this->createFirstUser($data);
@@ -107,11 +115,32 @@ class Installer
             return true;
         } catch (\Throwable $e) {
             error_log('Installation failed: ' . $e->getMessage());
+            // Cleanup on failure
+            $this->rollback();
             throw $e;
         }
     }
 
-    private function verifyRequirements(): void
+    /**
+     * Rollback partial installation on failure
+     */
+    private function rollback(): void
+    {
+        // Remove .env if we created it
+        if ($this->envWritten) {
+            $envPath = $this->rootPath . '/.env';
+            if (file_exists($envPath)) {
+                @unlink($envPath);
+            }
+        }
+
+        // Remove SQLite database if we created it
+        if ($this->dbCreated && $this->createdDbPath && file_exists($this->createdDbPath)) {
+            @unlink($this->createdDbPath);
+        }
+    }
+
+    private function verifyRequirements(array $data = []): void
     {
         $errors = [];
 
@@ -119,32 +148,66 @@ class Installer
             $errors[] = 'PHP 8.0 or higher is required';
         }
 
-        $requiredExtensions = ['pdo', 'gd', 'mbstring', 'openssl'];
+        // Core required extensions
+        $requiredExtensions = ['pdo', 'gd', 'mbstring', 'openssl', 'json', 'fileinfo'];
         foreach ($requiredExtensions as $ext) {
             if (!extension_loaded($ext)) {
                 $errors[] = "PHP extension '{$ext}' is not installed";
             }
         }
 
-        if (!extension_loaded('pdo_mysql') && !extension_loaded('pdo_sqlite')) {
-            $errors[] = 'Either PDO MySQL or PDO SQLite extension is required';
-        }
-
-        $writablePaths = [
-            $this->rootPath . '/database',
-            $this->rootPath . '/storage',
-            $this->rootPath . '/public/media'
-        ];
-
-        foreach ($writablePaths as $path) {
-            $dir = is_dir($path) ? $path : dirname($path);
-            if (!is_writable($dir)) {
-                $errors[] = "Directory '{$dir}' is not writable";
+        // Recommended extensions (warn but don't fail)
+        $recommendedExtensions = ['exif', 'curl'];
+        foreach ($recommendedExtensions as $ext) {
+            if (!extension_loaded($ext)) {
+                error_log("Recommended PHP extension '{$ext}' is not installed");
             }
         }
 
+        // Check database driver based on connection type
+        $connection = $data['db_connection'] ?? 'sqlite';
+        if ($connection === 'sqlite' && !extension_loaded('pdo_sqlite')) {
+            $errors[] = 'PDO SQLite extension is required for SQLite database';
+        } elseif ($connection === 'mysql' && !extension_loaded('pdo_mysql')) {
+            $errors[] = 'PDO MySQL extension is required for MySQL database';
+        } elseif (!extension_loaded('pdo_mysql') && !extension_loaded('pdo_sqlite')) {
+            $errors[] = 'Either PDO MySQL or PDO SQLite extension is required';
+        }
+
+        // Check writable directories with more detail
+        $writablePaths = [
+            $this->rootPath . '/database' => 'database',
+            $this->rootPath . '/storage' => 'storage',
+            $this->rootPath . '/storage/originals' => 'storage/originals',
+            $this->rootPath . '/public/media' => 'public/media',
+        ];
+
+        foreach ($writablePaths as $path => $name) {
+            // Create directory if it doesn't exist
+            if (!is_dir($path)) {
+                if (!@mkdir($path, 0755, true)) {
+                    $errors[] = "Cannot create directory '{$name}'";
+                    continue;
+                }
+            }
+            if (!is_writable($path)) {
+                $errors[] = "Directory '{$name}' is not writable";
+            }
+        }
+
+        // Check .env parent directory is writable
+        if (!is_writable($this->rootPath)) {
+            $errors[] = "Root directory is not writable (cannot create .env file)";
+        }
+
+        // Check disk space (minimum 100MB free)
+        $freeSpace = @disk_free_space($this->rootPath . '/storage');
+        if ($freeSpace !== false && $freeSpace < 100 * 1024 * 1024) {
+            $errors[] = 'Insufficient disk space. At least 100MB free space is required.';
+        }
+
         if (!empty($errors)) {
-            throw new RuntimeException(implode("\n", $errors));
+            throw new \RuntimeException(implode("\n", $errors));
         }
     }
 
@@ -153,38 +216,111 @@ class Installer
         $connection = $data['db_connection'] ?? 'sqlite';
 
         if ($connection === 'sqlite') {
-            $dbPath = $this->rootPath . '/database/database.sqlite';
+            // Use user-provided path or default
+            $dbPath = $data['db_database'] ?? ($this->rootPath . '/database/database.sqlite');
+
+            // Handle relative paths
+            if (!str_starts_with($dbPath, '/')) {
+                $dbPath = $this->rootPath . '/' . $dbPath;
+            }
+
+            // Normalize the path
+            $dbPath = realpath(dirname($dbPath)) . '/' . basename($dbPath);
+            if ($dbPath === false) {
+                $dbPath = $this->rootPath . '/database/database.sqlite';
+            }
+
             $dir = dirname($dbPath);
             if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+                if (!mkdir($dir, 0755, true)) {
+                    throw new \RuntimeException("Cannot create database directory: {$dir}");
+                }
             }
             if (file_exists($dbPath)) {
                 unlink($dbPath);
             }
             touch($dbPath);
+            $this->createdDbPath = $dbPath;
+            $this->dbCreated = true;
             $this->db = new Database(database: $dbPath, isSqlite: true);
+
+            // Store the actual path for .env
+            $data['_resolved_db_path'] = $dbPath;
         } else {
+            $host = $data['db_host'] ?? '127.0.0.1';
+            $port = (int)($data['db_port'] ?? 3306);
+            $database = $data['db_database'] ?? 'photocms';
+            $username = $data['db_username'] ?? 'root';
+            $password = $data['db_password'] ?? '';
+            // Use consistent charset/collation (match runtime Database class)
+            $charset = $data['db_charset'] ?? 'utf8mb4';
+            $collation = $data['db_collation'] ?? 'utf8mb4_0900_ai_ci';
+
+            // First, try to create the database if it doesn't exist
+            try {
+                $dsn = "mysql:host={$host};port={$port};charset={$charset}";
+                $pdo = new \PDO($dsn, $username, $password, [
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_TIMEOUT => 10,
+                ]);
+
+                // Try to create database
+                $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$database}` CHARACTER SET {$charset} COLLATE {$collation}");
+            } catch (\PDOException $e) {
+                // If we can't create, just proceed and let it fail on connection if DB doesn't exist
+                error_log("Note: Could not create database (may already exist): " . $e->getMessage());
+            }
+
             $this->db = new Database(
-                host: $data['db_host'] ?? '127.0.0.1',
-                port: (int)($data['db_port'] ?? 3306),
-                database: $data['db_database'] ?? 'photocms',
-                username: $data['db_username'] ?? 'root',
-                password: $data['db_password'] ?? '',
-                charset: $data['db_charset'] ?? 'utf8mb4',
-                collation: $data['db_collation'] ?? 'utf8mb4_unicode_ci',
+                host: $host,
+                port: $port,
+                database: $database,
+                username: $username,
+                password: $password,
+                charset: $charset,
+                collation: $collation,
+            );
+
+            // Test that we have proper privileges
+            $this->testMySQLPrivileges();
+        }
+    }
+
+    /**
+     * Test MySQL privileges for installation
+     */
+    private function testMySQLPrivileges(): void
+    {
+        if ($this->db === null || $this->db->isSqlite()) {
+            return;
+        }
+
+        $pdo = $this->db->pdo();
+
+        try {
+            // Test CREATE TABLE privilege
+            $pdo->exec('CREATE TABLE IF NOT EXISTS _install_test (id INT)');
+            $pdo->exec('DROP TABLE IF EXISTS _install_test');
+        } catch (\PDOException $e) {
+            throw new \RuntimeException(
+                "Insufficient MySQL privileges. The database user needs CREATE, ALTER, INSERT, UPDATE, DELETE privileges. Error: " . $e->getMessage()
             );
         }
     }
 
     private function installSchema(): void
     {
+        if ($this->db === null) {
+            throw new \RuntimeException('Database connection not established');
+        }
+
         if ($this->db->isSqlite()) {
             // SQLite: copy template database
             $templatePath = $this->rootPath . '/database/template.sqlite';
-            $targetPath = $this->rootPath . '/database/database.sqlite';
+            $targetPath = $this->createdDbPath ?? ($this->rootPath . '/database/database.sqlite');
 
             if (!file_exists($templatePath)) {
-                throw new RuntimeException('SQLite template database not found');
+                throw new \RuntimeException('SQLite template database not found. Please ensure database/template.sqlite exists.');
             }
 
             if (file_exists($targetPath)) {
@@ -192,16 +328,18 @@ class Installer
             }
 
             if (!copy($templatePath, $targetPath)) {
-                throw new RuntimeException('Failed to copy SQLite template database');
+                throw new \RuntimeException('Failed to copy SQLite template database');
             }
 
             $this->db = new Database(database: $targetPath, isSqlite: true);
+            $this->createdDbPath = $targetPath;
+            $this->dbCreated = true;
         } else {
             // MySQL: execute schema file
             $schemaPath = $this->rootPath . '/database/schema.mysql.sql';
 
             if (!file_exists($schemaPath)) {
-                throw new RuntimeException('MySQL schema file not found');
+                throw new \RuntimeException('MySQL schema file not found. Please ensure database/schema.mysql.sql exists.');
             }
 
             $this->db->execSqlFile($schemaPath);
@@ -273,15 +411,22 @@ class Installer
         $envContent .= "DB_CONNECTION={$connection}\n";
 
         if ($connection === 'sqlite') {
-            $envContent .= "DB_DATABASE=database/database.sqlite\n";
+            // Use the actual path where we created the database
+            // Convert to relative path from root for portability
+            $dbPath = $this->createdDbPath ?? ($this->rootPath . '/database/database.sqlite');
+            if (str_starts_with($dbPath, $this->rootPath . '/')) {
+                $dbPath = substr($dbPath, strlen($this->rootPath) + 1);
+            }
+            $envContent .= "DB_DATABASE={$dbPath}\n";
         } else {
             $envContent .= "DB_HOST=" . ($data['db_host'] ?? '127.0.0.1') . "\n";
             $envContent .= "DB_PORT=" . ($data['db_port'] ?? '3306') . "\n";
             $envContent .= "DB_DATABASE=" . ($data['db_database'] ?? 'photocms') . "\n";
             $envContent .= "DB_USERNAME=" . ($data['db_username'] ?? 'root') . "\n";
             $envContent .= "DB_PASSWORD=" . ($data['db_password'] ?? '') . "\n";
+            // Use consistent charset/collation
             $envContent .= "DB_CHARSET=" . ($data['db_charset'] ?? 'utf8mb4') . "\n";
-            $envContent .= "DB_COLLATION=" . ($data['db_collation'] ?? 'utf8mb4_unicode_ci') . "\n";
+            $envContent .= "DB_COLLATION=" . ($data['db_collation'] ?? 'utf8mb4_0900_ai_ci') . "\n";
         }
 
         $sessionSecret = bin2hex(random_bytes(32));
@@ -290,7 +435,76 @@ class Installer
 
         $envFilePath = $this->rootPath . '/.env';
         if (file_put_contents($envFilePath, $envContent) === false) {
-            throw new RuntimeException('Failed to write .env file');
+            throw new \RuntimeException('Failed to write .env file');
         }
+        $this->envWritten = true;
+    }
+
+    /**
+     * Get installation errors for display (public for use by controller)
+     */
+    public function getRequirementsErrors(array $data = []): array
+    {
+        $errors = [];
+
+        if (version_compare(PHP_VERSION, '8.0.0', '<')) {
+            $errors[] = 'PHP 8.0 or higher is required. Current version: ' . PHP_VERSION;
+        }
+
+        $requiredExtensions = ['pdo', 'gd', 'mbstring', 'openssl', 'json', 'fileinfo'];
+        foreach ($requiredExtensions as $ext) {
+            if (!extension_loaded($ext)) {
+                $errors[] = "Required PHP extension '{$ext}' is not installed";
+            }
+        }
+
+        $connection = $data['db_connection'] ?? 'sqlite';
+        if ($connection === 'sqlite' && !extension_loaded('pdo_sqlite')) {
+            $errors[] = 'PDO SQLite extension is required for SQLite database';
+        } elseif ($connection === 'mysql' && !extension_loaded('pdo_mysql')) {
+            $errors[] = 'PDO MySQL extension is required for MySQL database';
+        } elseif (!extension_loaded('pdo_mysql') && !extension_loaded('pdo_sqlite')) {
+            $errors[] = 'Either PDO MySQL or PDO SQLite extension is required';
+        }
+
+        $writablePaths = [
+            $this->rootPath . '/database',
+            $this->rootPath . '/storage',
+            $this->rootPath . '/public/media',
+        ];
+
+        foreach ($writablePaths as $path) {
+            if (!is_dir($path) || !is_writable($path)) {
+                $errors[] = "Directory '" . basename($path) . "' is not writable";
+            }
+        }
+
+        if (!is_writable($this->rootPath)) {
+            $errors[] = "Root directory is not writable";
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Get installation warnings for display
+     */
+    public function getRequirementsWarnings(): array
+    {
+        $warnings = [];
+
+        $recommendedExtensions = ['exif', 'curl', 'imagick'];
+        foreach ($recommendedExtensions as $ext) {
+            if (!extension_loaded($ext)) {
+                $warnings[] = "Recommended PHP extension '{$ext}' is not installed (optional but improves functionality)";
+            }
+        }
+
+        $freeSpace = @disk_free_space($this->rootPath . '/storage');
+        if ($freeSpace !== false && $freeSpace < 500 * 1024 * 1024) {
+            $warnings[] = 'Low disk space. Consider having at least 500MB free for storing images.';
+        }
+
+        return $warnings;
     }
 }
