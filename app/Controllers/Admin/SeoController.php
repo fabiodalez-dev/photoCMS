@@ -178,47 +178,30 @@ class SeoController extends BaseController
         }
 
         try {
-            // Get published albums for sitemap
-            $pdo = $this->db->pdo();
-            $stmt = $pdo->query('
-                SELECT a.slug, a.updated_at, a.published_at 
-                FROM albums a 
-                WHERE a.is_published = 1 
-                ORDER BY a.published_at DESC
-            ');
-            $albums = $stmt->fetchAll() ?: [];
-
-            // Get categories for sitemap
-            $stmt = $pdo->query('
-                SELECT c.slug, MAX(a.updated_at) as last_modified 
-                FROM categories c 
-                LEFT JOIN albums a ON a.category_id = c.id AND a.is_published = 1
-                GROUP BY c.id, c.slug
-                ORDER BY c.sort_order, c.name
-            ');
-            $categories = $stmt->fetchAll() ?: [];
-
-            // Generate sitemap XML
+            // Get base URL from settings or BaseUrlService
             $svc = new SettingsService($this->db);
             $seoBaseUrl = $svc->get('seo.canonical_base_url', '');
             $seoBaseUrl = is_string($seoBaseUrl) ? trim($seoBaseUrl) : '';
-
-            // Use SEO canonical URL or fallback to BaseUrlService
             $baseUrl = $seoBaseUrl !== '' ? rtrim($seoBaseUrl, '/') : BaseUrlService::getCurrentBaseUrl();
 
-            $sitemap = $this->generateSitemapXml($baseUrl, $albums, $categories);
-            
-            // Save sitemap to public directory
-            $sitemapPath = dirname(__DIR__, 3) . '/public/sitemap.xml';
-            file_put_contents($sitemapPath, $sitemap);
-            
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Sitemap generated successfully'];
-            
+            // Get public path
+            $publicPath = dirname(__DIR__, 3) . '/public';
+
+            // Use SitemapService to generate sitemap
+            $sitemapService = new \App\Services\SitemapService($this->db, $baseUrl, $publicPath);
+            $result = $sitemapService->generate();
+
+            if ($result['success']) {
+                $_SESSION['flash'][] = ['type' => 'success', 'message' => $result['message']];
+            } else {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => $result['error']];
+            }
+
         } catch (\Throwable $e) {
             Logger::error('SeoController::generateSitemap error', ['error' => $e->getMessage()], 'admin');
             $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Error generating sitemap: ' . $e->getMessage()];
         }
-        
+
         return $response->withHeader('Location', $this->redirect('/admin/seo'))->withStatus(302);
     }
 

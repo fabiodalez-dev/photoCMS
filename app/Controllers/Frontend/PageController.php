@@ -1114,6 +1114,10 @@ class PageController extends BaseController
         $contactTitle = (string)($settings->get('about.contact_title', 'Contatti') ?? 'Contatti');
         $contactIntro = (string)($settings->get('about.contact_intro', '') ?? '');
 
+        // reCAPTCHA settings
+        $recaptchaEnabled = (bool)($settings->get('recaptcha.enabled', false) ?? false);
+        $recaptchaSiteKey = (string)($settings->get('recaptcha.site_key', '') ?? '');
+
         $q = $request->getQueryParams();
         $contactSent = isset($q['sent']);
         $contactError = isset($q['error']);
@@ -1142,6 +1146,8 @@ class PageController extends BaseController
             'contact_intro' => $contactIntro,
             'contact_sent' => $contactSent,
             'contact_error' => $contactError,
+            'recaptcha_enabled' => $recaptchaEnabled,
+            'recaptcha_site_key' => $recaptchaSiteKey,
             'csrf' => $_SESSION['csrf'] ?? ''
         ]);
     }
@@ -1160,6 +1166,48 @@ class PageController extends BaseController
 
         if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $message === '') {
             return $response->withHeader('Location', $this->redirect('/about?error=1'))->withStatus(302);
+        }
+
+        // reCAPTCHA validation
+        $settings = new \App\Services\SettingsService($this->db);
+        $recaptchaEnabled = (bool)($settings->get('recaptcha.enabled', false) ?? false);
+        $recaptchaSecretKey = (string)($settings->get('recaptcha.secret_key', '') ?? '');
+
+        if ($recaptchaEnabled && $recaptchaSecretKey !== '') {
+            $recaptchaToken = trim((string)($data['recaptcha_token'] ?? ''));
+
+            if ($recaptchaToken === '') {
+                return $response->withHeader('Location', $this->redirect('/about?error=1'))->withStatus(302);
+            }
+
+            // Verify token with Google reCAPTCHA API
+            try {
+                $recaptcha = new \ReCaptcha\ReCaptcha($recaptchaSecretKey);
+                $resp = $recaptcha->setExpectedAction('contact')
+                    ->setScoreThreshold(0.5)
+                    ->verify($recaptchaToken, $_SERVER['REMOTE_ADDR'] ?? '');
+
+                if (!$resp->isSuccess()) {
+                    \App\Support\Logger::warning('reCAPTCHA verification failed', [
+                        'errors' => $resp->getErrorCodes(),
+                        'score' => $resp->getScore()
+                    ], 'security');
+                    return $response->withHeader('Location', $this->redirect('/about?error=1'))->withStatus(302);
+                }
+
+                // Check score (v3 returns score 0.0-1.0, higher is more likely human)
+                if ($resp->getScore() < 0.5) {
+                    \App\Support\Logger::warning('reCAPTCHA score too low', [
+                        'score' => $resp->getScore()
+                    ], 'security');
+                    return $response->withHeader('Location', $this->redirect('/about?error=1'))->withStatus(302);
+                }
+            } catch (\Throwable $e) {
+                \App\Support\Logger::error('reCAPTCHA verification error', [
+                    'error' => $e->getMessage()
+                ], 'security');
+                return $response->withHeader('Location', $this->redirect('/about?error=1'))->withStatus(302);
+            }
         }
 
         $settings = new \App\Services\SettingsService($this->db);

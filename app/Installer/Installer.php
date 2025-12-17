@@ -111,6 +111,7 @@ class Installer
             $this->installSchema();
             $this->createFirstUser($data);
             $this->updateSiteSettings($data);
+            $this->generateFavicons($data);
             $this->createEnvFile($data);
             return true;
         } catch (\Throwable $e) {
@@ -408,6 +409,39 @@ class Installer
             '',
             1
         ]);
+    }
+
+    private function generateFavicons(array $data): void
+    {
+        // Generate favicons from uploaded logo if available
+        $logoPath = $data['site_logo_path'] ?? null;
+
+        if ($logoPath === null || $logoPath === '') {
+            // No logo uploaded, skip favicon generation
+            return;
+        }
+
+        try {
+            $publicPath = $this->rootPath . '/public';
+            $absoluteLogoPath = $publicPath . $logoPath;
+
+            if (!file_exists($absoluteLogoPath)) {
+                // Logo file doesn't exist, skip favicon generation
+                error_log('Installer: Logo file not found for favicon generation: ' . $absoluteLogoPath);
+                return;
+            }
+
+            $faviconService = new \App\Services\FaviconService($publicPath);
+            $result = $faviconService->generateFavicons($absoluteLogoPath);
+
+            if (!$result['success']) {
+                // Log error but don't fail installation
+                error_log('Installer: Failed to generate favicons: ' . ($result['error'] ?? 'Unknown error'));
+            }
+        } catch (\Throwable $e) {
+            // Log error but don't fail installation
+            error_log('Installer: Exception during favicon generation: ' . $e->getMessage());
+        }
     }
 
     private function updateSiteSettings(array $data): void

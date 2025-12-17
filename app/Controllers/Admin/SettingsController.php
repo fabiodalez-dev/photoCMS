@@ -126,10 +126,19 @@ class SettingsController extends BaseController
         $siteLanguage = preg_replace('/[^a-z0-9_-]/i', '', (string)($data['site_language'] ?? 'en')) ?: 'en';
         $svc->set('site.language', $siteLanguage);
 
+        // reCAPTCHA settings
+        $recaptchaSiteKey = trim((string)($data['recaptcha_site_key'] ?? ''));
+        $recaptchaSecretKey = trim((string)($data['recaptcha_secret_key'] ?? ''));
+        $recaptchaEnabled = isset($data['recaptcha_enabled']);
+
+        $svc->set('recaptcha.site_key', $recaptchaSiteKey !== '' ? $recaptchaSiteKey : null);
+        $svc->set('recaptcha.secret_key', $recaptchaSecretKey !== '' ? $recaptchaSecretKey : null);
+        $svc->set('recaptcha.enabled', $recaptchaEnabled);
+
         $svc->set('performance.compression', $performanceSettings['compression']);
         $svc->set('pagination.limit', $paginationLimit);
         $svc->set('cache.ttl', $cacheTtl);
-        
+
         $_SESSION['flash'][] = ['type'=>'success','message'=>'Settings saved successfully'];
         return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
     }
@@ -164,6 +173,61 @@ class SettingsController extends BaseController
             ];
         }
         
+        return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+    }
+
+    public function generateFavicons(Request $request, Response $response): Response
+    {
+        // CSRF validation
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Invalid CSRF token'];
+            return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+        }
+
+        try {
+            // Get logo path from settings
+            $svc = new SettingsService($this->db);
+            $logoPath = (string)($svc->get('site.logo', '') ?? '');
+
+            if ($logoPath === '') {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Please upload a logo first before generating favicons'];
+                return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+            }
+
+            // Convert relative path to absolute path
+            $publicPath = dirname(__DIR__, 3) . '/public';
+            $absoluteLogoPath = $publicPath . $logoPath;
+
+            if (!file_exists($absoluteLogoPath)) {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Logo file not found: ' . $logoPath];
+                return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+            }
+
+            // Generate favicons
+            $faviconService = new \App\Services\FaviconService($publicPath);
+            $result = $faviconService->generateFavicons($absoluteLogoPath);
+
+            if ($result['success']) {
+                $generatedCount = count($result['generated']);
+                $message = "Successfully generated {$generatedCount} favicon file(s): " . implode(', ', $result['generated']);
+
+                if (!empty($result['errors'])) {
+                    $message .= '. Errors: ' . implode(', ', $result['errors']);
+                    $_SESSION['flash'][] = ['type' => 'warning', 'message' => $message];
+                } else {
+                    $_SESSION['flash'][] = ['type' => 'success', 'message' => $message];
+                }
+            } else {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Failed to generate favicons: ' . ($result['error'] ?? 'Unknown error')];
+            }
+
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = [
+                'type' => 'danger',
+                'message' => 'Error generating favicons: ' . $e->getMessage()
+            ];
+        }
+
         return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
     }
 }

@@ -122,6 +122,21 @@
             </div>
           </div>
           <p class="text-xs text-gray-500 mt-2">{{ trans('admin.settings.logo_hint') }}</p>
+
+          <!-- Favicon Generation -->
+          <div class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 class="text-sm font-medium text-gray-900 mb-2">{{ trans('admin.settings.generate_favicons', {}, 'Generate Favicons') }}</h4>
+            <p class="text-xs text-gray-600 mb-3">{{ trans('admin.settings.generate_favicons_desc', {}, 'Automatically generate all favicon sizes (16x16, 32x32, 180x180, etc.) from your logo') }}</p>
+            <form method="post" action="{{ base_path }}/admin/settings/generate-favicons" class="inline">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button type="submit" class="btn-secondary text-sm {{ settings['site.logo'] ? '' : 'opacity-50 cursor-not-allowed' }}" {{ settings['site.logo'] ? '' : 'disabled' }}>
+                <i class="fas fa-magic mr-2"></i>{{ trans('admin.settings.generate_favicons_button', {}, 'Generate Favicons') }}
+              </button>
+            </form>
+            {% if not settings['site.logo'] %}
+              <p class="text-xs text-amber-600 mt-2"><i class="fas fa-info-circle mr-1"></i>{{ trans('admin.settings.upload_logo_first', {}, 'Upload a logo first to generate favicons') }}</p>
+            {% endif %}
+          </div>
         </div>
 
         <!-- Other Site Settings (Grid Layout) -->
@@ -245,6 +260,42 @@
             <span class="ml-3">
               <span class="text-sm font-medium text-gray-900 block">{{ trans('admin.settings.show_exif') }}</span>
               <span class="text-xs text-gray-600 block mt-1">{{ trans('admin.settings.show_exif_desc') }}</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- reCAPTCHA Settings -->
+    <div class="card">
+      <div class="p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <i class="fas fa-shield-alt mr-3 text-gray-600"></i>
+          Google reCAPTCHA v3
+        </h3>
+
+        <p class="text-sm text-gray-600 mb-6">{{ trans('admin.settings.recaptcha_desc', {}, 'Protect your contact form from spam using Google reCAPTCHA v3 (invisible). Get your keys at') }} <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener" class="text-blue-600 hover:underline">google.com/recaptcha/admin</a></p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">{{ trans('admin.settings.recaptcha_site_key', {}, 'Site Key (Public)') }}</label>
+            <input type="text" name="recaptcha_site_key" value="{{ settings['recaptcha.site_key'] ?? '' }}" class="form-input font-mono text-sm" placeholder="6Lc...">
+            <p class="text-xs text-gray-500 mt-1">{{ trans('admin.settings.recaptcha_site_key_hint', {}, 'Public key for client-side integration') }}</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">{{ trans('admin.settings.recaptcha_secret_key', {}, 'Secret Key (Private)') }}</label>
+            <input type="password" name="recaptcha_secret_key" value="{{ settings['recaptcha.secret_key'] ?? '' }}" class="form-input font-mono text-sm" placeholder="6Lc..." autocomplete="off">
+            <p class="text-xs text-gray-500 mt-1">{{ trans('admin.settings.recaptcha_secret_key_hint', {}, 'Private key for server-side verification') }}</p>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <label class="flex items-start">
+            <input type="checkbox" name="recaptcha_enabled" id="recaptcha_enabled" class="rounded border-gray-300 text-black focus:ring-black mt-1" {% if settings['recaptcha.enabled'] %}checked{% endif %}>
+            <span class="ml-3">
+              <span class="text-sm font-medium text-gray-900 block">{{ trans('admin.settings.recaptcha_enabled', {}, 'Enable reCAPTCHA') }}</span>
+              <span class="text-xs text-gray-600 block mt-1">{{ trans('admin.settings.recaptcha_enabled_hint', {}, 'Activate spam protection on contact form') }}</span>
             </span>
           </label>
         </div>
