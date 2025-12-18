@@ -219,6 +219,19 @@ class SettingsController extends BaseController
                 return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
             }
 
+            // Validate file is readable
+            if (!is_readable($absoluteLogoPath)) {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Logo file is not readable: ' . $logoPath];
+                return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+            }
+
+            // Validate MIME type
+            $mimeType = mime_content_type($absoluteLogoPath);
+            if (!$mimeType || !str_starts_with($mimeType, 'image/')) {
+                $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Logo file must be an image'];
+                return $response->withHeader('Location', $this->redirect('/admin/settings'))->withStatus(302);
+            }
+
             // Generate favicons
             $faviconService = new \App\Services\FaviconService($publicPath);
             $result = $faviconService->generateFavicons($absoluteLogoPath);

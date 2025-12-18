@@ -1861,4 +1861,48 @@ class PageController extends BaseController
             ]
         ];
     }
+
+    /**
+     * Generate dynamic web manifest for PWA
+     */
+    public function webManifest(Request $request, Response $response): Response
+    {
+        $svc = new \App\Services\SettingsService($this->db);
+
+        $siteName = (string)($svc->get('seo.site_title', 'Photography Portfolio') ?? 'Photography Portfolio');
+        $siteDescription = (string)($svc->get('seo.site_description', '') ?? '');
+        $themeColor = '#ffffff';
+        $backgroundColor = '#ffffff';
+        $basePath = $this->basePath ?: '';
+
+        $manifest = [
+            'name' => $siteName,
+            'short_name' => mb_strlen($siteName) > 12 ? mb_substr($siteName, 0, 12) : $siteName,
+            'description' => $siteDescription,
+            'icons' => [
+                [
+                    'src' => $basePath . '/android-chrome-192x192.png',
+                    'sizes' => '192x192',
+                    'type' => 'image/png',
+                    'purpose' => 'any maskable'
+                ],
+                [
+                    'src' => $basePath . '/android-chrome-512x512.png',
+                    'sizes' => '512x512',
+                    'type' => 'image/png',
+                    'purpose' => 'any maskable'
+                ]
+            ],
+            'start_url' => $basePath . '/',
+            'scope' => $basePath . '/',
+            'display' => 'standalone',
+            'theme_color' => $themeColor,
+            'background_color' => $backgroundColor
+        ];
+
+        $response->getBody()->write(json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        return $response
+            ->withHeader('Content-Type', 'application/manifest+json')
+            ->withHeader('Cache-Control', 'public, max-age=86400');
+    }
 }

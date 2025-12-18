@@ -50,8 +50,7 @@ class SitemapService
             $sitemap->addURL('/galleries', new \DateTime(), 'weekly', 0.9);
 
             // Add categories
-            $pdo = $this->db->pdo();
-            $stmt = $pdo->query('SELECT slug, updated_at FROM categories WHERE slug IS NOT NULL ORDER BY slug');
+            $stmt = $this->db->query('SELECT slug, updated_at FROM categories WHERE slug IS NOT NULL ORDER BY slug');
             $categories = $stmt->fetchAll() ?: [];
 
             foreach ($categories as $category) {
@@ -63,7 +62,7 @@ class SitemapService
             }
 
             // Add tags
-            $stmt = $pdo->query('SELECT slug FROM tags WHERE slug IS NOT NULL ORDER BY slug');
+            $stmt = $this->db->query('SELECT slug FROM tags WHERE slug IS NOT NULL ORDER BY slug');
             $tags = $stmt->fetchAll() ?: [];
 
             foreach ($tags as $tag) {
@@ -71,7 +70,7 @@ class SitemapService
             }
 
             // Add published albums (exclude NSFW for privacy/SEO)
-            $stmt = $pdo->query('
+            $stmt = $this->db->query('
                 SELECT slug, published_at, updated_at
                 FROM albums
                 WHERE is_published = 1 AND slug IS NOT NULL AND (is_nsfw = 0 OR is_nsfw IS NULL)

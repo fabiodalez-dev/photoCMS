@@ -83,6 +83,12 @@ $app->get('/', function (Request $request, Response $response) use ($container) 
     return $controller->home($request, $response);
 });
 
+// Dynamic web manifest (PWA)
+$app->get('/site.webmanifest', function (Request $request, Response $response) use ($container) {
+    $controller = new \App\Controllers\Frontend\PageController($container['db'], Twig::fromRequest($request));
+    return $controller->webManifest($request, $response);
+});
+
 // Protected media serving (for password-protected and NSFW albums)
 // Rate limited to prevent scraping/enumeration attacks
 $app->get('/media/protected/{id}/{variant}.{format}', function (Request $request, Response $response, array $args) use ($container) {

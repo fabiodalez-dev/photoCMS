@@ -1721,24 +1721,6 @@
                                     font-size: 14px; line-height: 1.5; text-align: center;
                                     pointer-events: none; opacity: 0; transition: opacity 0.2s ease;
                                 `;
-                                const esc = (s) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                                const piece = (icon, val) => val ? `<span class=\"cc-item\"><i class=\"${icon}\"></i>${esc(val)}</span>` : '';
-                                const updateCaption = () => {
-                                    const a = pswp.currSlide && pswp.currSlide.data && pswp.currSlide.data.element;
-                                    if (!a) { el.style.opacity='0'; return; }
-                                    const title = a.getAttribute('data-title') || '';
-                                    const alt = a.getAttribute('data-alt') || '';
-                                    const camera = a.getAttribute('data-camera') || '';
-                                    const lens = a.getAttribute('data-lens') || '';
-                                    const film = a.getAttribute('data-film') || '';
-                                    const dev = a.getAttribute('data-developer') || '';
-                                    const lab = a.getAttribute('data-lab') || '';
-                                    const loc = a.getAttribute('data-location') || '';
-                                    const iso = a.getAttribute('data-iso') || '';
-                                    const sh = a.getAttribute('data-shutter') || '';
-                                    const ap = a.getAttribute('data-aperture') || '';
-                                // Replace with minimal hidden-caption/alt logic
-                                };
                                 const renderCaption = () => {
                                   const curr = lb.pswp.currSlide && lb.pswp.currSlide.data && lb.pswp.currSlide.data.element;
                                   if (!curr) { el.innerHTML=''; el.style.opacity='0'; return; }
