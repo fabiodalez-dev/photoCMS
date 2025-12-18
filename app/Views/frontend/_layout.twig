@@ -54,7 +54,7 @@
 
     {# Organization/Person JSON-LD from SEO settings (if provided) #}
     {% if schema is defined and (schema.author_name or schema.organization_name) %}
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="{{ csp_nonce() }}">
     {
       "@context": "https://schema.org",
       {% if schema.author_name %}
@@ -94,7 +94,7 @@
 
     {# BreadcrumbList Schema #}
     {% if breadcrumbs is defined and breadcrumbs|length > 0 and schema is defined and schema.breadcrumbs_enabled %}
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="{{ csp_nonce() }}">
     {
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
@@ -115,7 +115,7 @@
 
     {# LocalBusiness Schema (if enabled) #}
     {% if schema is defined and schema.local_business_enabled %}
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="{{ csp_nonce() }}">
     {
       "@context": "https://schema.org",
       "@type": {{ schema.local_business_type|default('ProfessionalService')|json_encode|raw }},
@@ -2275,6 +2275,18 @@
     {# Essential JavaScript - Always loaded (no consent required) #}
     {% if custom_js_essential %}
     <script id="custom-js-essential" nonce="{{ csp_nonce() }}">{{ custom_js_essential|raw }}</script>
+    {% endif %}
+
+    {# Block right-click on images for non-admin users #}
+    {% if not is_admin %}
+    <script nonce="{{ csp_nonce() }}">
+    document.addEventListener("contextmenu", function(e) {
+      var target = e.target;
+      if (target.tagName === "IMG" || (target.closest && target.closest(".no-rightclick"))) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+    </script>
     {% endif %}
 
     {# Cookie Banner with conditional script loader #}
