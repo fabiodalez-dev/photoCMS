@@ -243,6 +243,12 @@ class InstallerController
             return $response->withHeader('Location', $this->basePath . '/install/settings')->withStatus(302);
         }
 
+        $siteEmail = trim((string)($data['site_email'] ?? ''));
+        if ($siteEmail === '' || !filter_var($siteEmail, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'A valid contact email is required.'];
+            return $response->withHeader('Location', $this->basePath . '/install/settings')->withStatus(302);
+        }
+
         // Handle logo upload
         $uploadedFiles = $request->getUploadedFiles();
         $logoPath = null;
