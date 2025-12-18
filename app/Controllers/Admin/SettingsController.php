@@ -132,6 +132,17 @@ class SettingsController extends BaseController
         $recaptchaSecretKey = trim((string)($data['recaptcha_secret_key'] ?? ''));
         $recaptchaEnabled = isset($data['recaptcha_enabled']);
 
+        // Validate reCAPTCHA key format (alphanumeric, underscore, hyphen only)
+        $recaptchaKeyPattern = '/^[A-Za-z0-9_-]+$/';
+        if ($recaptchaSiteKey !== '' && !preg_match($recaptchaKeyPattern, $recaptchaSiteKey)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Invalid reCAPTCHA Site Key format'];
+            $recaptchaSiteKey = ''; // Reject invalid key
+        }
+        if ($recaptchaSecretKey !== '' && !preg_match($recaptchaKeyPattern, $recaptchaSecretKey)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'message' => 'Invalid reCAPTCHA Secret Key format'];
+            $recaptchaSecretKey = ''; // Reject invalid key
+        }
+
         // Get existing keys to check if they're set
         $existingSiteKey = (string)$svc->get('recaptcha.site_key', '');
         $existingSecretKey = (string)$svc->get('recaptcha.secret_key', '');

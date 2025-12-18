@@ -30,7 +30,7 @@
 
 {% if recaptcha_enabled and recaptcha_site_key %}
 {# Google reCAPTCHA v3 #}
-<script src="https://www.google.com/recaptcha/api.js?render={{ recaptcha_site_key }}"></script>
+<script src="https://www.google.com/recaptcha/api.js?render={{ recaptcha_site_key|e('url') }}"></script>
 <script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
   const contactForm = document.querySelector('form[action*="/contact"]');
@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
       event.preventDefault();
 
       grecaptcha.ready(function() {
-        grecaptcha.execute('{{ recaptcha_site_key }}', {action: 'contact'}).then(function(token) {
+        grecaptcha.execute('{{ recaptcha_site_key|e('js') }}', {action: 'contact'}).then(function(token) {
           // Add token to form
           let recaptchaInput = contactForm.querySelector('input[name="recaptcha_token"]');
           if (!recaptchaInput) {

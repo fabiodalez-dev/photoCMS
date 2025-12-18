@@ -103,21 +103,41 @@ class MediaController extends BaseController
         $isNsfw = (bool)$row['is_nsfw'];
 
         if (!$this->validateAlbumAccess($albumId, $isPasswordProtected, $isNsfw, $variant)) {
+            // For NSFW albums, gracefully fall back to blurred variant when access not confirmed
+            if ($isNsfw && $variant !== 'blur') {
+                $blurStmt = $pdo->prepare('SELECT path FROM image_variants WHERE image_id = :id AND variant = :variant AND format = :format');
+                $blurStmt->execute([':id' => $imageId, ':variant' => 'blur', ':format' => 'jpg']);
+                $blurRow = $blurStmt->fetch();
+                if ($blurRow && !empty($blurRow['path'])) {
+                    $variant = 'blur';
+                    $format = 'jpg';
+                    $variantRow = ['path' => $blurRow['path']];
+                    goto serve_variant;
+                }
+            }
             return $response->withStatus(403);
         }
 
         // Get the variant path from database
-        $variantStmt = $pdo->prepare('
-            SELECT path FROM image_variants
-            WHERE image_id = :id AND variant = :variant AND format = :format
-        ');
+        $variantStmt = $pdo->prepare('SELECT path FROM image_variants WHERE image_id = :id AND variant = :variant AND format = :format');
         $variantStmt->execute([':id' => $imageId, ':variant' => $variant, ':format' => $format]);
         $variantRow = $variantStmt->fetch();
 
+        // Graceful fallback: if the requested variant is missing (except blur), serve the original file
         if (!$variantRow || empty($variantRow['path'])) {
-            return $response->withStatus(404);
+            if ($variant === 'blur') {
+                return $response->withStatus(404);
+            }
+            $origStmt = $pdo->prepare('SELECT original_path FROM images WHERE id = :id');
+            $origStmt->execute([':id' => $imageId]);
+            $origPath = $origStmt->fetchColumn();
+            if (!$origPath) {
+                return $response->withStatus(404);
+            }
+            $variantRow = ['path' => $origPath];
         }
 
+        serve_variant:
         // Build file path - DB stores URL paths like /media/... which map to public/media/
         $root = dirname(__DIR__, 3);
         $relativePath = ltrim($variantRow['path'], '/');
@@ -140,6 +160,28 @@ class MediaController extends BaseController
         $publicRoot = realpath("{$root}/public/");
 
         if (!$realPath || !is_file($realPath)) {
+            // As a last resort for NSFW albums, try serving blur
+            if ($isNsfw && $variant !== 'blur') {
+                $blurStmt = $pdo->prepare('SELECT path FROM image_variants WHERE image_id = :id AND variant = :variant AND format = :format');
+                $blurStmt->execute([':id' => $imageId, ':variant' => 'blur', ':format' => 'jpg']);
+                $blurRow = $blurStmt->fetch();
+                if ($blurRow && !empty($blurRow['path'])) {
+                    $relativePath = ltrim($blurRow['path'], '/');
+                    if (str_starts_with($relativePath, 'media/')) {
+                        $filePath = "{$root}/public/{$relativePath}";
+                    } else {
+                        $filePath = "{$root}/{$relativePath}";
+                    }
+                    $realPath = realpath($filePath);
+                    if ($realPath && is_file($realPath)) {
+                        $detectedMime = 'image/jpeg';
+                        $streamed = $this->streamFile($response, $realPath, $detectedMime);
+                        if ($streamed !== null) {
+                            return $streamed->withHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+                        }
+                    }
+                }
+            }
             return $response->withStatus(404);
         }
 
@@ -220,12 +262,6 @@ class MediaController extends BaseController
         $isPasswordProtected = !empty($row['password_hash']);
         $isNsfw = (bool)$row['is_nsfw'];
         $isAdmin = $this->isAdmin();
-        $allowDownloads = (int)($row['allow_downloads'] ?? 0);
-
-        // Respect album download flag for non-admin users
-        if (!$isAdmin && !$allowDownloads) {
-            return $response->withStatus(403);
-        }
 
         // Check access for protected albums
         if (!$isAdmin) {
@@ -241,8 +277,20 @@ class MediaController extends BaseController
             if ($isNsfw) {
                 $nsfwConfirmed = isset($_SESSION['nsfw_confirmed'][$albumId]) && $_SESSION['nsfw_confirmed'][$albumId] === true;
                 if (!$nsfwConfirmed) {
+                    // Serve blur fallback instead of hard deny
+                    $root = dirname(__DIR__, 3);
+                    $blurRel = "media/{$imageId}_blur.jpg";
+                    $blurFs = "{$root}/public/{$blurRel}";
+                    if (is_file($blurFs)) {
+                        return $this->serveStaticFile($request, $response, $blurRel);
+                    }
                     return $response->withStatus(403);
                 }
+            }
+
+            // Check if downloads are allowed for this album
+            if (!$row['allow_downloads']) {
+                return $response->withStatus(403);
             }
         }
 
@@ -357,6 +405,16 @@ class MediaController extends BaseController
         $isPasswordProtected = !empty($row['password_hash']);
         $isNsfw = (bool)$row['is_nsfw'];
         if (!$this->validateAlbumAccess($albumId, $isPasswordProtected, $isNsfw, $variant)) {
+            // For NSFW albums, fall back to blur when not confirmed
+            if ($isNsfw && $variant !== 'blur') {
+                $blurPath = $imageId . '_blur.jpg'; // relative to public/media
+                // Serve blur if file exists
+                $root = dirname(__DIR__, 3);
+                $blurFs = "{$root}/public/media/{$blurPath}";
+                if (is_file($blurFs)) {
+                    return $this->serveStaticFile($request, $response, $blurPath);
+                }
+            }
             return $response->withStatus(403);
         }
 
@@ -370,7 +428,12 @@ class MediaController extends BaseController
     private function serveStaticFile(Request $request, Response $response, string $relativePath): Response
     {
         $root = dirname(__DIR__, 3);
-        $filePath = "{$root}/public/media/{$relativePath}";
+        // Accept either "1_blur.jpg" or "media/1_blur.jpg"
+        $cleanRel = ltrim($relativePath, '/');
+        if (str_starts_with($cleanRel, 'media/')) {
+            $cleanRel = substr($cleanRel, strlen('media/'));
+        }
+        $filePath = "{$root}/public/media/{$cleanRel}";
         $realPath = realpath($filePath);
 
         // Validate file exists and is within public/media/
