@@ -199,6 +199,14 @@ if (!$isInstallerRoute && $container['db'] !== null) {
         }
         $twig->getEnvironment()->addGlobal('site_language', $siteLanguage);
         $twig->getEnvironment()->addGlobal('admin_language', $adminLanguage);
+        // Expose translation maps for JS bundles (admin/frontend)
+        if ($translationService !== null) {
+            if ($isAdminRoute) {
+                $twig->getEnvironment()->addGlobal('admin_translations', $translationService->all());
+            } else {
+                $twig->getEnvironment()->addGlobal('frontend_translations', $translationService->all());
+            }
+        }
         // Cookie banner settings
         $twig->getEnvironment()->addGlobal('cookie_banner_enabled', $settingsSvc->get('privacy.cookie_banner_enabled', true));
         $twig->getEnvironment()->addGlobal('custom_js_essential', $settingsSvc->get('privacy.custom_js_essential', ''));

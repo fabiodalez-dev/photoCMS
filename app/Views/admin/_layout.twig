@@ -16,20 +16,26 @@
     window.basePath = '{{ base_path }}';
     window.cspNonce = '{{ csp_nonce() }}';
 
-    // Minimal admin i18n for static JS bundles (extend as needed)
-    window.adminTranslations = window.adminTranslations || {};
-    window.adminTranslations['admin.settings.logo_updated'] = {{ trans('admin.settings.logo_updated')|json_encode|raw }};
-    window.adminTranslations['admin.settings.logo_upload_failed'] = {{ trans('admin.settings.logo_upload_failed')|json_encode|raw }};
-    window.adminTranslations['admin.settings.logo_upload_error'] = {{ trans('admin.settings.logo_upload_error')|json_encode|raw }};
-    window.adminTranslations['admin.settings.logo_removed_info'] = {{ trans('admin.settings.logo_removed_info')|json_encode|raw }};
-    window.adminTranslations['admin.settings.favicons_generated'] = {{ trans('admin.settings.favicons_generated')|json_encode|raw }};
-    window.adminTranslations['admin.settings.favicon_generation_failed'] = {{ trans('admin.settings.favicon_generation_failed')|json_encode|raw }};
+    // Admin i18n for static JS bundles
+    // `admin_translations` is injected server-side in public/index.php when $isAdminRoute is true.
+    window.adminTranslations = {{ (admin_translations|default({}))|json_encode|raw }};
 
     window.adminT = function(key, fallback) {
       if (window.adminTranslations && Object.prototype.hasOwnProperty.call(window.adminTranslations, key)) {
         return window.adminTranslations[key];
       }
       return fallback || key;
+    };
+
+    window.adminTf = function(key, params, fallback) {
+      const tpl = window.adminT(key, fallback);
+      let out = String(tpl ?? '');
+      if (params && typeof params === 'object') {
+        Object.keys(params).forEach((k) => {
+          out = out.replaceAll(`{${k}}`, String(params[k]));
+        });
+      }
+      return out;
     };
   </script>
   <style nonce="{{ csp_nonce() }}">

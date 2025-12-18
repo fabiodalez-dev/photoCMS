@@ -18,6 +18,30 @@ import 'tinymce/skins/content/default/content.css'
 // Import GSAP for animations
 import { gsap } from 'gsap'
 
+// Admin JS i18n helpers (translations injected in admin/_layout.twig)
+const t = (key, fallback) => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.adminT === 'function') {
+      return window.adminT(key, fallback);
+    }
+  } catch (e) {}
+  return fallback || key;
+};
+const tf = (key, params = {}, fallback) => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.adminTf === 'function') {
+      return window.adminTf(key, params, fallback);
+    }
+  } catch (e) {}
+  let out = t(key, fallback);
+  try {
+    Object.keys(params || {}).forEach((k) => {
+      out = String(out).replaceAll(`{${k}}`, String(params[k]));
+    });
+  } catch (e) {}
+  return out;
+};
+
 /**
  * Initialize the custom image upload area: configures an Uppy instance (XHRUpload with CSRF),
  * builds a hidden file input, enables drag-and-drop, renders a total + per-file progress panel,
@@ -71,7 +95,7 @@ function initUppyAreaUpload() {
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-black" id="upload-spinner"></div>
-            <span class="text-sm font-medium text-gray-900">Upload in progress</span>
+            <span class="text-sm font-medium text-gray-900" id="upload-title"></span>
           </div>
           <span class="text-sm text-gray-600" id="upload-counter">0 / 0</span>
         </div>
@@ -79,12 +103,16 @@ function initUppyAreaUpload() {
         <div class="w-full bg-gray-200 rounded-full h-2">
           <div id="upload-bar-total" class="bg-black h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div class="text-xs text-gray-500" id="upload-status">Preparing...</div>
+        <div class="text-xs text-gray-500" id="upload-status"></div>
         <!-- Individual file progress list -->
         <div id="upload-file-list" class="space-y-2 max-h-48 overflow-y-auto"></div>
       </div>
     `;
     document.body.appendChild(progressEl);
+    const titleEl = document.getElementById('upload-title');
+    if (titleEl) titleEl.textContent = t('admin.upload.in_progress_title', 'Upload in progress');
+    const statusEl = document.getElementById('upload-status');
+    if (statusEl) statusEl.textContent = t('admin.upload.preparing', 'Preparing...');
   }
 
   // Track files for individual progress
@@ -111,7 +139,7 @@ function initUppyAreaUpload() {
     const existing = new Set(uppy.getFiles().map(f=>`${f.name}|${f.size}`));
     Array.from(input.files).forEach((f) => {
       const key = `${f.name}|${f.size}`;
-      if (existing.has(key)) { if (window.showToast) window.showToast('File già aggiunto: ' + f.name, 'error'); return; }
+      if (existing.has(key)) { if (window.showToast) window.showToast(tf('admin.upload.file_already_added', { name: f.name }, `File already added: ${f.name}`), 'error'); return; }
       try { uppy.addFile({ source: 'file-input', name: f.name, type: f.type, data: f }); } catch(e) {}
     });
     input.value = '';
@@ -127,7 +155,7 @@ function initUppyAreaUpload() {
     const existing = new Set(uppy.getFiles().map(f=>`${f.name}|${f.size}`));
     files.forEach((f) => {
       const key = `${f.name}|${f.size}`;
-      if (existing.has(key)) { if (window.showToast) window.showToast('File già aggiunto: ' + f.name, 'error'); return; }
+      if (existing.has(key)) { if (window.showToast) window.showToast(tf('admin.upload.file_already_added', { name: f.name }, `File already added: ${f.name}`), 'error'); return; }
       try { uppy.addFile({ source: 'drag-drop', name: f.name, type: f.type, data: f }); } catch(e) {}
     });
   });
@@ -144,12 +172,14 @@ function initUppyAreaUpload() {
         <span class="text-xs text-gray-700 truncate flex-1 mr-2" title="${safeName}">
           <i class="fas fa-image text-gray-400 mr-1"></i>${safeName}
         </span>
-        <span class="text-xs text-gray-500 file-status">In attesa...</span>
+        <span class="text-xs text-gray-500 file-status"></span>
       </div>
       <div class="w-full bg-gray-100 rounded-full h-1">
         <div class="file-bar bg-gray-400 h-1 rounded-full transition-all duration-150" style="width: 0%"></div>
       </div>
     `;
+    const statusEl = div.querySelector('.file-status');
+    if (statusEl) statusEl.textContent = t('admin.upload.queued', 'Queued...');
     return div;
   }
 
@@ -197,7 +227,7 @@ function initUppyAreaUpload() {
   uppy.on('upload-start', () => {
     progressEl.classList.remove('hidden');
     const statusEl = document.getElementById('upload-status');
-    if (statusEl) statusEl.textContent = 'Starting upload...';
+    if (statusEl) statusEl.textContent = t('admin.upload.starting_upload', 'Starting upload...');
     updateTotalProgress();
   });
 
@@ -207,11 +237,11 @@ function initUppyAreaUpload() {
     fileProgressMap.set(file.id, percentage);
 
     const statusEl = document.getElementById('upload-status');
-    if (statusEl) statusEl.textContent = `Uploading ${file.name}...`;
+    if (statusEl) statusEl.textContent = tf('admin.upload.uploading_file', { name: file.name }, `Uploading ${file.name}...`);
   });
 
   uppy.on('upload-success', (file) => {
-    updateFileEl(file.id, 100, 'Completed ✓', false, true);
+    updateFileEl(file.id, 100, t('admin.upload.completed', 'Completed') + ' ✓', false, true);
     fileProgressMap.set(file.id, 100);
     updateTotalProgress();
   });
@@ -220,7 +250,8 @@ function initUppyAreaUpload() {
     const statusEl = document.getElementById('upload-status');
     const spinnerEl = document.getElementById('upload-spinner');
 
-    if (statusEl) statusEl.textContent = `Completed! ${result.successful?.length || 0} files uploaded`;
+    const count = result.successful?.length || 0;
+    if (statusEl) statusEl.textContent = tf('admin.upload.completed_summary', { count }, `Completed! ${count} files uploaded`);
     if (spinnerEl) spinnerEl.className = 'rounded-full h-5 w-5 bg-green-500 flex items-center justify-center text-white text-xs';
     if (spinnerEl) spinnerEl.innerHTML = '<i class="fas fa-check"></i>';
 
@@ -242,7 +273,7 @@ function initUppyAreaUpload() {
 
   // Surface server-side errors (400, etc.) instead of generic network error
   uppy.on('upload-error', (file, error, response) => {
-    let msg = 'Upload error';
+    let msg = t('admin.upload.upload_error', 'Upload error');
     try {
       if (response && response.body) {
         msg = response.body.error || response.body.message || msg;
@@ -255,7 +286,7 @@ function initUppyAreaUpload() {
     } catch {}
 
     // Update individual file progress to show error
-    updateFileEl(file.id, 100, 'Error ✗', true, false);
+    updateFileEl(file.id, 100, t('admin.common.error', 'Error') + ' ✗', true, false);
     updateTotalProgress();
 
     if (window.showToast) window.showToast(msg, 'error');
@@ -264,7 +295,7 @@ function initUppyAreaUpload() {
 
   uppy.on('error', (error) => {
     const statusEl = document.getElementById('upload-status');
-    if (statusEl) statusEl.textContent = `Error: ${error.message}`;
+    if (statusEl) statusEl.textContent = `${t('admin.common.error', 'Error')}: ${error.message}`;
 
     setTimeout(() => {
       progressEl.classList.add('hidden');
@@ -374,10 +405,10 @@ function initSortableGrid() {
             }, 
             body: JSON.stringify({ order: ids }) 
           });
-          if (window.showToast) window.showToast('Order saved', 'success');
+          if (window.showToast) window.showToast(t('admin.common.order_saved', 'Order saved'), 'success');
         } catch(error) {
           console.error('Failed to save order:', error);
-          if (window.showToast) window.showToast('Error saving order', 'error');
+          if (window.showToast) window.showToast(t('admin.common.order_save_error', 'Error saving order'), 'error');
         }
       }
     });
@@ -430,10 +461,10 @@ function initSortableGrid() {
           }, 
           body: JSON.stringify({ order: ids }) 
         });
-        if (window.showToast) window.showToast('Order saved manually', 'success');
+        if (window.showToast) window.showToast(t('admin.common.order_saved_manual', 'Order saved manually'), 'success');
       } catch(error) {
         console.error('Failed to save order manually:', error);
-        if (window.showToast) window.showToast('Error saving order', 'error');
+        if (window.showToast) window.showToast(t('admin.common.order_save_error', 'Error saving order'), 'error');
       }
     });
   }
@@ -466,7 +497,7 @@ function initTinyMCE() {
     branding: false,
     plugins: 'link lists autoresize',
     toolbar: 'undo redo | blocks | bold italic underline strikethrough | alignleft aligncenter alignright | bullist numlist | blockquote | link | removeformat',
-    block_formats: 'Paragrafo=p; Sottotitolo=h3; Titolo sezione=h2; Nota=h4',
+    block_formats: `${t('admin.tinymce.paragraph', 'Paragraph')}=p; ${t('admin.tinymce.subtitle', 'Subtitle')}=h3; ${t('admin.tinymce.section_title', 'Section title')}=h2; ${t('admin.tinymce.note', 'Note')}=h4`,
     default_link_target: '_blank',
     link_default_protocol: 'https',
     rel_list: [
@@ -829,7 +860,7 @@ function validateForm(e) {
   
   if (!isValid) {
     e.preventDefault();
-    showToast('Please fill in all required fields', 'error');
+    showToast(t('admin.common.required_fields', 'Please fill in all required fields'), 'error');
   }
 }
 
@@ -871,7 +902,7 @@ function initMediaModalOnEdit() {
   }
   async function load(){
     try {
-      body.innerHTML = '<div class="p-8 text-center"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+      body.innerHTML = `<div class="p-8 text-center"><i class="fas fa-spinner fa-spin"></i> ${t('admin.common.loading', 'Loading...')}</div>`;
       const res = await fetch(`${window.basePath || ''}/admin/media?partial=1`, { 
         headers: { 'Accept':'text/html' }
       });
@@ -881,7 +912,7 @@ function initMediaModalOnEdit() {
     } catch(e) {
       console.error('Failed to load media:', e);
       body.innerHTML = `<div class="text-center text-red-600 p-8">
-        <p>Error loading gallery</p>
+        <p>${t('admin.media.error_loading_gallery', 'Error loading gallery')}</p>
         <p class="text-sm mt-2">${e.message}</p>
       </div>`;
     }
@@ -897,19 +928,19 @@ function initMediaModalOnEdit() {
       const res = await fetch(`${window.basePath || ''}/admin/albums/${albumId}/images/attach`, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body: fd.toString() });
       if (res.ok) {
         hide();
-        if (window.showToast) window.showToast('Image added','success');
+        if (window.showToast) window.showToast(t('admin.albums.image_added', 'Image added'), 'success');
         refreshGalleryArea();
       } else if (res.status === 409) {
         // Duplicate image
         const data = await res.json().catch(() => ({}));
-        if (window.showToast) window.showToast(data.error || 'Image already in album', 'error');
+        if (window.showToast) window.showToast(data.error || t('admin.albums.image_already_in_album', 'Image already in album'), 'error');
       } else {
         console.error('Failed to attach image:', res.status, res.statusText);
-        if (window.showToast) window.showToast('Error adding image','error');
+        if (window.showToast) window.showToast(t('admin.albums.error_add_image', 'Error adding image'), 'error');
       }
     } catch(error) {
       console.error('Error attaching image:', error);
-      if (window.showToast) window.showToast('Error adding image','error');
+      if (window.showToast) window.showToast(t('admin.albums.error_add_image', 'Error adding image'), 'error');
     }
   });
 }
@@ -1010,10 +1041,10 @@ function bindGridButtons() {
         const res = await fetch(`${window.basePath || ''}/admin/albums/${albumId}/cover/${id}`, { method:'POST', headers: { 'X-CSRF-Token': csrf, 'Accept': 'application/json' }});
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (window.refreshGalleryArea) await window.refreshGalleryArea();
-        if (window.showToast) window.showToast('Cover set', 'success');
+        if (window.showToast) window.showToast(t('admin.albums.cover_set', 'Cover set'), 'success');
       } catch (err) {
         console.error('Cover set failed:', err);
-        if (window.showToast) window.showToast('Error setting cover', 'error');
+        if (window.showToast) window.showToast(t('admin.albums.error_cover', 'Error setting cover'), 'error');
         // Fallback: full reload
         try { window.location.reload(); } catch(_){ }
       }
@@ -1026,23 +1057,23 @@ function bindGridButtons() {
     btn._boundDelete = true;
     btn.addEventListener('click', async (e) => {
       e.preventDefault(); e.stopPropagation();
-      if(!confirm('Delete this image?')) return;
+      if(!confirm(t('admin.albums.delete_image_confirm', 'Delete this image?'))) return;
       const id = btn.getAttribute('data-delete-id');
       try {
         const res = await fetch(`${window.basePath || ''}/admin/albums/${albumId}/images/${id}/delete`, { method:'POST', headers: { 'X-CSRF-Token': csrf, 'Accept': 'application/json' }});
         if (res.ok) {
           btn.closest('[data-id]')?.remove();
           if (window.refreshGalleryArea) await window.refreshGalleryArea();
-          if (window.showToast) window.showToast('Image deleted', 'success');
+          if (window.showToast) window.showToast(t('admin.albums.image_deleted', 'Image deleted'), 'success');
         } else {
           const t = await res.text().catch(()=> '');
           console.error('Delete failed:', res.status, t);
-          if (window.showToast) window.showToast('Error deleting', 'error');
+          if (window.showToast) window.showToast(t('admin.albums.error_delete', 'Deletion error'), 'error');
           try { window.location.reload(); } catch(_){ }
         }
       } catch (err) {
         console.error('Delete request error:', err);
-        if (window.showToast) window.showToast('Error deleting', 'error');
+        if (window.showToast) window.showToast(t('admin.albums.error_delete', 'Deletion error'), 'error');
         try { window.location.reload(); } catch(_){ }
       }
     });
