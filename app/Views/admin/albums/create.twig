@@ -516,19 +516,12 @@
     };
 
     function initializeAlbumCreatePage() {
-      // Prevent double initialization
-      if (window.albumCreatePageInitialized) {
-        console.log('Album create page already initialized, skipping...');
-        return;
-      }
-      
       console.log('Initializing Album create page...');
-      
+
       // Initialize upload functionality
+      // Note: Double-init protection is handled at element level via uploader._uploadInitialized
       initUploadFunctionality();
-      
-      // Mark as initialized
-      window.albumCreatePageInitialized = true;
+
       console.log('Album create page initialization completed');
     }
     
