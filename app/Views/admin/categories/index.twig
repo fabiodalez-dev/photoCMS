@@ -626,7 +626,7 @@
       }
       
       updateIndicator(level) {
-        this.indicator.textContent = `{{ trans('admin.categories.level') }} ${level}${level >= this.maxLevel ? ' ({{ trans('admin.categories.max') }})' : ''}`;
+        this.indicator.textContent = `{{ trans('admin.categories.level')|e('js') }} ${level}${level >= this.maxLevel ? ' ({{ trans('admin.categories.max')|e('js') }})' : ''}`;
         this.indicator.classList.add('show');
 
         if (level >= this.maxLevel) {

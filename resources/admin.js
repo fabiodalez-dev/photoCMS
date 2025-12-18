@@ -1060,8 +1060,8 @@ function bindGridButtons() {
           if (window.refreshGalleryArea) await window.refreshGalleryArea();
           if (window.showToast) window.showToast(t('admin.albums.image_deleted'), 'success');
         } else {
-          const t = await res.text().catch(()=> '');
-          console.error('Delete failed:', res.status, t);
+          const responseText = await res.text().catch(()=> '');
+          console.error('Delete failed:', res.status, responseText);
           if (window.showToast) window.showToast(t('admin.albums.error_delete'), 'error');
           try { window.location.reload(); } catch(_){ }
         }
