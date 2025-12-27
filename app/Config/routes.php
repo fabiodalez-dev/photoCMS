@@ -118,7 +118,7 @@ $app->get('/fonts/typography.css', function (Request $request, Response $respons
         ->withHeader('Content-Type', 'text/css')
         ->withHeader('Cache-Control', 'public, max-age=3600')
         ->withHeader('ETag', $etag);
-});
+})->add(new RateLimitMiddleware(100, 60)); // 100 requests per minute
 
 // Protected media serving (for password-protected and NSFW albums)
 // Rate limited to prevent scraping/enumeration attacks
@@ -495,7 +495,8 @@ $app->post('/admin/typography/reset', function (Request $request, Response $resp
 $app->post('/admin/typography/preview', function (Request $request, Response $response) use ($container) {
     $controller = new \App\Controllers\Admin\TypographyController($container['db'], Twig::fromRequest($request));
     return $controller->preview($request, $response);
-})->add($container['db'] ? new AuthMiddleware($container['db']) : function($request, $handler) { return $handler->handle($request); });
+})->add(new RateLimitMiddleware(30, 60)) // 30 preview requests per minute
+  ->add($container['db'] ? new AuthMiddleware($container['db']) : function($request, $handler) { return $handler->handle($request); });
 $app->get('/admin/typography/font/{slug}', function (Request $request, Response $response, array $args) use ($container) {
     $controller = new \App\Controllers\Admin\TypographyController($container['db'], Twig::fromRequest($request));
     return $controller->fontInfo($request, $response, $args);
