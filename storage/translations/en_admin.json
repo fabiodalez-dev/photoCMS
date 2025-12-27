@@ -535,6 +535,7 @@
     "admin.pages.home.structure_title": "Homepage Structure",
     "admin.pages.home.structure_desc": "The homepage consists of these main sections:",
     "admin.pages.home.hero_desc": "Title and subtitle introducing your portfolio",
+    "admin.pages.home.hero_label": "Hero",
     "admin.pages.home.infinite_gallery_info": "Auto-scrolling mosaic of images from your albums",
     "admin.pages.home.gallery_text_info": "Optional text section after the gallery",
     "admin.pages.home.albums_carousel_info": "Horizontal carousel featuring your latest albums",

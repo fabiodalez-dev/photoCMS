@@ -81,8 +81,15 @@ class PageController extends BaseController
                     while (is_array($value) && isset($value[$device])) {
                         $value = $value[$device];
                     }
-                    if (is_numeric($value) && $value > 0 && $value <= 12) {
-                        $normalizedColumns[$device] = (int)$value;
+                    $intValue = (int)$value;
+                    $isValid = match ($device) {
+                        'desktop' => $intValue >= 1 && $intValue <= 6,
+                        'tablet' => $intValue >= 1 && $intValue <= 4,
+                        'mobile' => $intValue >= 1 && $intValue <= 2,
+                        default => false,
+                    };
+                    if ($isValid) {
+                        $normalizedColumns[$device] = $intValue;
                     } else {
                         $normalizedColumns[$device] = match($device) {
                             'desktop' => 3,
@@ -685,7 +692,7 @@ class PageController extends BaseController
             if (!empty($image['custom_fields'])) {
                 foreach ($image['custom_fields'] as $field) {
                     if (!empty($field['show_in_lightbox']) && !empty($field['values'])) {
-                        $icon = $field['icon'] ?? 'fa-tag';
+                        $icon = preg_replace('/[^a-zA-Z0-9\-_\s]/', '', (string)($field['icon'] ?? 'fa-tag'));
                         $valuesStr = htmlspecialchars(implode(', ', $field['values']), ENT_QUOTES);
                         $equipBits[] = '<i class="fa-solid ' . $icon . ' mr-1"></i>' . $valuesStr;
                     }

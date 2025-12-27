@@ -737,21 +737,27 @@ class GalleryController extends BaseController
             foreach (['desktop', 'tablet', 'mobile'] as $device) {
                 if (isset($templateSettings['columns'][$device])) {
                     $value = $templateSettings['columns'][$device];
-                    
+
                     // Keep digging until we find the actual numeric value
                     while (is_array($value) && isset($value[$device])) {
                         $value = $value[$device];
                     }
-                    
-                    // Ensure we have a reasonable numeric value
-                    if (is_numeric($value) && $value > 0 && $value <= 12) {
-                        $normalizedColumns[$device] = (int)$value;
+
+                    $intValue = (int)$value;
+                    $isValid = match ($device) {
+                        'desktop' => $intValue >= 1 && $intValue <= 6,
+                        'tablet' => $intValue >= 1 && $intValue <= 4,
+                        'mobile' => $intValue >= 1 && $intValue <= 2,
+                        default => false,
+                    };
+                    if ($isValid) {
+                        $normalizedColumns[$device] = $intValue;
                     } else {
-                        // Fallback values
                         $normalizedColumns[$device] = match($device) {
                             'desktop' => 3,
-                            'tablet' => 2, 
-                            'mobile' => 1
+                            'tablet' => 2,
+                            'mobile' => 1,
+                            default => 3,
                         };
                     }
                 }
