@@ -56,7 +56,6 @@ Thumbs.db
 reset_app.php
 phpinfo.php
 tests/
-docs/
 
 # Cache
 .cache/
