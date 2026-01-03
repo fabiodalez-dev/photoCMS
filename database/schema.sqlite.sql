@@ -74,6 +74,31 @@ CREATE TABLE IF NOT EXISTS templates (
 CREATE INDEX IF NOT EXISTS idx_templates_slug ON templates(slug);
 
 -- ============================================
+-- CUSTOM TEMPLATES (Plugin)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS custom_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL CHECK(type IN ('gallery', 'album_page', 'homepage')),
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  description TEXT,
+  version TEXT NOT NULL,
+  author TEXT,
+  metadata TEXT,
+  twig_path TEXT NOT NULL,
+  css_paths TEXT,
+  js_paths TEXT,
+  preview_path TEXT,
+  is_active INTEGER DEFAULT 1 CHECK(is_active IN (0, 1)),
+  installed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_templates_type ON custom_templates(type);
+CREATE INDEX IF NOT EXISTS idx_custom_templates_active ON custom_templates(is_active);
+
+-- ============================================
 -- EQUIPMENT LOOKUP TABLES
 -- ============================================
 
@@ -132,6 +157,8 @@ CREATE TABLE IF NOT EXISTS albums (
   category_id INTEGER NOT NULL,
   location_id INTEGER,
   template_id INTEGER,
+  custom_template_id INTEGER,
+  album_page_template TEXT,
   excerpt TEXT,
   body TEXT,
   cover_image_id INTEGER,
@@ -142,6 +169,11 @@ CREATE TABLE IF NOT EXISTS albums (
   sort_order INTEGER DEFAULT 0,
   password_hash TEXT,
   allow_downloads INTEGER NOT NULL DEFAULT 0,
+  custom_cameras TEXT,
+  custom_lenses TEXT,
+  custom_films TEXT,
+  custom_developers TEXT,
+  custom_labs TEXT,
   seo_title TEXT,
   seo_description TEXT,
   seo_keywords TEXT,
@@ -159,13 +191,15 @@ CREATE TABLE IF NOT EXISTS albums (
   updated_at TEXT,
   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
   FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
-  FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
+  FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL,
+  FOREIGN KEY (custom_template_id) REFERENCES custom_templates(id) ON DELETE SET NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_slug ON albums(slug);
 CREATE INDEX IF NOT EXISTS idx_albums_category ON albums(category_id);
 CREATE INDEX IF NOT EXISTS idx_albums_location ON albums(location_id);
 CREATE INDEX IF NOT EXISTS idx_albums_template ON albums(template_id);
+CREATE INDEX IF NOT EXISTS idx_albums_custom_template ON albums(custom_template_id);
 CREATE INDEX IF NOT EXISTS idx_albums_published ON albums(is_published);
 CREATE INDEX IF NOT EXISTS idx_albums_published_at ON albums(published_at);
 CREATE INDEX IF NOT EXISTS idx_albums_sort ON albums(sort_order);
@@ -524,6 +558,114 @@ CREATE TABLE IF NOT EXISTS plugin_status (
 CREATE INDEX IF NOT EXISTS idx_plugin_status_active ON plugin_status(is_active);
 
 -- ============================================
+-- PLUGIN TABLES
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS plugin_analytics_custom_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT,
+  event_type TEXT NOT NULL,
+  event_category TEXT,
+  event_action TEXT,
+  event_label TEXT,
+  event_value INTEGER,
+  user_id INTEGER,
+  metadata TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES analytics_sessions(session_id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_analytics_session ON plugin_analytics_custom_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_plugin_analytics_type ON plugin_analytics_custom_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_plugin_analytics_user ON plugin_analytics_custom_events(user_id);
+
+CREATE TABLE IF NOT EXISTS plugin_image_ratings (
+  image_id INTEGER PRIMARY KEY,
+  rating INTEGER NOT NULL CHECK(rating >= 0 AND rating <= 5),
+  rated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  rated_by INTEGER NULL,
+  FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE,
+  FOREIGN KEY (rated_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_image_ratings_rated_by ON plugin_image_ratings(rated_by);
+
+-- ============================================
+-- ANALYTICS PRO TABLES (Plugin)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS analytics_pro_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL UNIQUE,
+  user_id INTEGER,
+  ip_address TEXT,
+  user_agent TEXT,
+  device_type TEXT,
+  browser TEXT,
+  country TEXT,
+  started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  last_activity TEXT DEFAULT CURRENT_TIMESTAMP,
+  ended_at TEXT,
+  duration INTEGER DEFAULT 0,
+  pageviews INTEGER DEFAULT 0,
+  events_count INTEGER DEFAULT 0,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_sessions_user_id ON analytics_pro_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_sessions_started_at ON analytics_pro_sessions(started_at);
+
+CREATE TABLE IF NOT EXISTS analytics_pro_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_name TEXT NOT NULL,
+  category TEXT,
+  action TEXT,
+  label TEXT,
+  value INTEGER,
+  user_id INTEGER,
+  session_id TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  referrer TEXT,
+  device_type TEXT,
+  browser TEXT,
+  country TEXT,
+  metadata TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (session_id) REFERENCES analytics_pro_sessions(session_id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_event_name ON analytics_pro_events(event_name);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_category ON analytics_pro_events(category);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_created_at ON analytics_pro_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_user_id ON analytics_pro_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_session_id ON analytics_pro_events(session_id);
+
+CREATE TABLE IF NOT EXISTS analytics_pro_funnels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  steps TEXT NOT NULL,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS analytics_pro_dimensions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  dimension_name TEXT NOT NULL,
+  dimension_value TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (event_id) REFERENCES analytics_pro_events(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_dimensions_event_id ON analytics_pro_dimensions(event_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_pro_dimensions_name ON analytics_pro_dimensions(dimension_name);
+
+-- ============================================
 -- LOGS TABLE (Structured Logging System)
 -- ============================================
 
@@ -702,6 +844,11 @@ INSERT INTO settings (key, value, type) VALUES
 ('seo.lazy_load_images', 'true', 'boolean'),
 ('seo.structured_data_format', 'json-ld', 'string'),
 ('lightbox.show_exif', 'true', 'boolean'),
+('maintenance.enabled', 'false', 'boolean'),
+('maintenance.title', '', 'string'),
+('maintenance.message', '', 'string'),
+('maintenance.show_logo', 'true', 'boolean'),
+('maintenance.show_countdown', 'true', 'boolean'),
 ('recaptcha.enabled', 'false', 'boolean'),
 ('recaptcha.site_key', '', 'string'),
 ('recaptcha.secret_key', '', 'string'),
@@ -738,6 +885,124 @@ INSERT INTO analytics_settings (setting_key, setting_value, description) VALUES
 ('bot_detection_enabled', 'true', 'Filter out bot traffic'),
 ('session_timeout_minutes', '30', 'Session timeout in minutes'),
 ('export_enabled', 'true', 'Allow data export functionality');
+
+-- Default plugin status (pre-installed plugins)
+INSERT OR IGNORE INTO plugin_status (slug, name, version, description, author, path, is_active, is_installed) VALUES
+('analytics-logger', 'Analytics Logger', '1.0.0', 'Advanced analytics logging with custom events and detailed tracking', 'Cimaise Team', 'plugins/analytics-logger', 1, 1),
+('cimaise-analytics-pro', 'Cimaise Analytics Pro', '1.0.0', 'Sistema di analytics professionale con tracking avanzato, dashboard interattiva, report personalizzabili, funnel analysis, heatmap, export dati e real-time monitoring per Cimaise', 'Cimaise Team', 'plugins/cimaise-analytics-pro', 1, 1),
+('custom-templates-pro', 'Custom Templates Pro', '1.0.0', 'Carica template personalizzati per gallerie, album e homepage con guide e prompt personalizzabili', 'Cimaise Team', 'plugins/custom-templates-pro', 1, 1),
+('hello-cimaise', 'Hello Cimaise', '1.0.0', 'Simple example plugin demonstrating the hooks system', 'Cimaise Team', 'plugins/hello-cimaise', 1, 1),
+('image-rating', 'Image Rating', '1.0.0', 'Add star rating system to images (1-5 stars) with sorting and filtering', 'Cimaise Team', 'plugins/image-rating', 1, 1),
+('maintenance-mode', 'Maintenance Mode', '1.0.0', 'Put your site under construction with a beautiful maintenance page. Only admins can access the site.', 'Cimaise Team', 'plugins/maintenance-mode', 1, 1);
+
+-- Default custom templates (plugin)
+INSERT OR IGNORE INTO custom_templates
+(id, type, name, slug, description, version, author, metadata, twig_path, css_paths, js_paths, preview_path, is_active) VALUES
+(1, 'gallery', 'Polaroid Gallery', 'polaroid-gallery', 'Griglia fotografica con effetto polaroid e rotazioni casuali', '1.0.0', 'Cimaise Team',
+ '{"type":"gallery","name":"Polaroid Gallery","slug":"polaroid-gallery","description":"Griglia fotografica con effetto polaroid e rotazioni casuali","version":"1.0.0","author":"Cimaise Team","requires":{"cimaise":">=1.0.0"},"settings":{"layout":"grid","columns":{"desktop":4,"tablet":3,"mobile":1},"gap":30,"aspect_ratio":"1:1","style":["shadow","hover_scale"]},"libraries":{"masonry":false,"photoswipe":true},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/polaroid-gallery/template.twig',
+ '["uploads/galleries/polaroid-gallery/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(2, 'gallery', 'Prism Weave', 'prism-weave', 'Gallery moderna a colonne fluide con reveal animato e hover luminoso', '1.0.0', 'Cimaise Team',
+'{"type":"gallery","name":"Prism Weave","slug":"prism-weave","description":"Gallery moderna a colonne fluide con reveal animato e hover luminoso","version":"1.0.0","author":"Cimaise Team","requires":{"cimaise":">=1.0.0"},"settings":{"layout":"sparse","columns":{"desktop":4,"tablet":3,"mobile":1},"gap":{"horizontal":18,"vertical":18},"style":{"rounded":false,"hover_scale":true}},"libraries":{"photoswipe":true,"masonry":false},"assets":{"css":["styles.css"],"js":["script.js"]}}',
+ 'uploads/galleries/prism-weave/template.twig',
+ '["uploads/galleries/prism-weave/styles.css"]',
+ '["uploads/galleries/prism-weave/script.js"]',
+ NULL,
+ 1),
+(3, 'gallery', 'Mono Grid', 'mono-grid', 'Minimal grid with strong whitespace.', '1.0.0', 'Cimaise',
+ '{"type":"gallery","name":"Mono Grid","slug":"mono-grid","description":"Minimal grid with strong whitespace.","version":"1.0.0","author":"Cimaise","settings":{"layout":"grid","columns":{"desktop":3,"tablet":2,"mobile":1},"gap":{"horizontal":16,"vertical":16},"aspect_ratio":"4:3","style":{"rounded":false,"shadow":false,"hover_scale":true}},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/mono-grid/template.twig',
+ '["uploads/galleries/mono-grid/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(4, 'gallery', 'Caption Rail', 'caption-rail', 'Grid with subtle caption rail.', '1.0.0', 'Cimaise',
+ '{"type":"gallery","name":"Caption Rail","slug":"caption-rail","description":"Grid with subtle caption rail.","version":"1.0.0","author":"Cimaise","settings":{"layout":"grid","columns":{"desktop":4,"tablet":2,"mobile":1},"gap":{"horizontal":12,"vertical":12},"aspect_ratio":"3:2","style":{"rounded":true,"shadow":false,"hover_scale":true}},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/caption-rail/template.twig',
+ '["uploads/galleries/caption-rail/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(5, 'gallery', 'Edge Tiles', 'edge-tiles', 'Edge-to-edge tiles with clean borders.', '1.0.0', 'Cimaise',
+ '{"type":"gallery","name":"Edge Tiles","slug":"edge-tiles","description":"Edge-to-edge tiles with clean borders.","version":"1.0.0","author":"Cimaise","settings":{"layout":"grid","columns":{"desktop":5,"tablet":3,"mobile":1},"gap":{"horizontal":6,"vertical":6},"aspect_ratio":"1:1","style":{"rounded":false,"shadow":false,"hover_scale":false}},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/edge-tiles/template.twig',
+ '["uploads/galleries/edge-tiles/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(6, 'gallery', 'Quiet Masonry', 'quiet-masonry', 'Soft masonry rhythm with subtle hover.', '1.0.0', 'Cimaise',
+'{"type":"gallery","name":"Quiet Masonry","slug":"quiet-masonry","description":"Soft masonry rhythm with subtle hover.","version":"1.0.0","author":"Cimaise","settings":{"layout":"masonry","columns":{"desktop":3,"tablet":2,"mobile":1},"gap":{"horizontal":18,"vertical":18},"style":{"rounded":true,"shadow":false,"hover_scale":true},"masonry":{"type":"balanced"}},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/quiet-masonry/template.twig',
+ '["uploads/galleries/quiet-masonry/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(7, 'gallery', 'Strip Grid', 'strip-grid', 'Sparse strips with wide whitespace and horizontal drift.', '1.0.0', 'Cimaise',
+ '{"type":"gallery","name":"Strip Grid","slug":"strip-grid","description":"Sparse strips with wide whitespace and horizontal drift.","version":"1.0.0","author":"Cimaise","settings":{"layout":"sparse","columns":{"desktop":2,"tablet":2,"mobile":1},"gap":{"horizontal":36,"vertical":36},"style":{"rounded":false,"shadow":false,"hover_scale":true}},"assets":{"css":["styles.css"]}}',
+ 'uploads/galleries/strip-grid/template.twig',
+ '["uploads/galleries/strip-grid/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(8, 'album_page', 'Minimal Album Page', 'minimal-album-page', 'Complete album page with minimalist and clean design', '1.0.0', 'Cimaise Team',
+ '{"type":"album_page","name":"Minimal Album Page","slug":"minimal-album-page","description":"Complete album page with minimalist and clean design","version":"1.0.0","author":"Cimaise Team","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"grid","show_breadcrumbs":false,"show_social_sharing":false,"show_equipment":true,"header_style":"centered"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/minimal-album-page/page.twig',
+ '["uploads/albums/minimal-album-page/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(9, 'album_page', 'Signal Stack Album', 'signal-stack', 'Editorial album page with typographic hero and modular grid', '1.0.0', 'Cimaise Team',
+ '{"type":"album_page","name":"Signal Stack Album","slug":"signal-stack","description":"Editorial album page with typographic hero and modular grid","version":"1.0.0","author":"Cimaise Team","requires":{"cimaise":">=1.0.0"},"settings":{"uses_gallery_template":false,"columns":{"desktop":3,"tablet":2,"mobile":1},"gap":20},"libraries":{"photoswipe":true},"assets":{"css":["styles.css"],"js":["script.js"]}}',
+ 'uploads/albums/signal-stack/page.twig',
+ '["uploads/albums/signal-stack/styles.css"]',
+ '["uploads/albums/signal-stack/script.js"]',
+ NULL,
+ 1),
+(10, 'album_page', 'Atlas Editorial', 'atlas-editorial', 'Editorial layout with cover, body, and sidebar equipment.', '1.0.0', 'Cimaise',
+ '{"type":"album_page","name":"Atlas Editorial","slug":"atlas-editorial","description":"Editorial layout with cover, body, and sidebar equipment.","version":"1.0.0","author":"Cimaise","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"grid","show_equipment":true,"header_style":"editorial"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/atlas-editorial/page.twig',
+ '["uploads/albums/atlas-editorial/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(11, 'album_page', 'Split Story', 'split-story', 'Split layout with sticky meta and wide gallery.', '1.0.0', 'Cimaise',
+ '{"type":"album_page","name":"Split Story","slug":"split-story","description":"Split layout with sticky meta and wide gallery.","version":"1.0.0","author":"Cimaise","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"masonry","show_equipment":true,"header_style":"split"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/split-story/page.twig',
+ '["uploads/albums/split-story/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(12, 'album_page', 'Quiet Stack', 'quiet-stack', 'Minimal stacked layout with subtle dividers.', '1.0.0', 'Cimaise',
+ '{"type":"album_page","name":"Quiet Stack","slug":"quiet-stack","description":"Minimal stacked layout with subtle dividers.","version":"1.0.0","author":"Cimaise","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"grid","show_equipment":true,"header_style":"minimal"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/quiet-stack/page.twig',
+ '["uploads/albums/quiet-stack/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(13, 'album_page', 'Cover Rail', 'cover-rail', 'Hero cover with rail meta blocks and gallery.', '1.0.0', 'Cimaise',
+ '{"type":"album_page","name":"Cover Rail","slug":"cover-rail","description":"Hero cover with rail meta blocks and gallery.","version":"1.0.0","author":"Cimaise","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"grid","show_equipment":true,"header_style":"cover"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/cover-rail/page.twig',
+ '["uploads/albums/cover-rail/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(14, 'album_page', 'Panel Notes', 'panel-notes', 'Blocky panels with notes and a clean gallery.', '1.0.0', 'Cimaise',
+ '{"type":"album_page","name":"Panel Notes","slug":"panel-notes","description":"Blocky panels with notes and a clean gallery.","version":"1.0.0","author":"Cimaise","requires":{"cimaise":">=1.0.0"},"settings":{"gallery_layout":"grid","show_equipment":true,"header_style":"blocks"},"assets":{"css":["styles.css"]}}',
+ 'uploads/albums/panel-notes/page.twig',
+ '["uploads/albums/panel-notes/styles.css"]',
+ NULL,
+ NULL,
+ 1),
+(15, 'gallery', 'Drift Scape', 'drift-scape', 'Sparse gallery with wide whitespace and horizontal drift.', '1.0.0', 'Cimaise Team',
+ '{"type":"gallery","name":"Drift Scape","slug":"drift-scape","description":"Sparse gallery with wide whitespace and horizontal drift.","version":"1.0.0","author":"Cimaise Team","requires":{"cimaise":">=1.0.0"},"settings":{"layout":"sparse","columns":{"desktop":3,"tablet":2,"mobile":1},"gap":{"horizontal":40,"vertical":48},"style":{"rounded":false,"shadow":false,"hover_scale":true}},"libraries":{"photoswipe":true},"assets":{"css":["styles.css"],"js":["script.js"]}}',
+ 'uploads/galleries/drift-scape/template.twig',
+ '["uploads/galleries/drift-scape/styles.css"]',
+ '["uploads/galleries/drift-scape/script.js"]',
+ NULL,
+ 1);
 
 -- NOTE: Frontend texts are loaded from JSON files in storage/translations/
 -- The frontend_texts table is for user-customized translations only
